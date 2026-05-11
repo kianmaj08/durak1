@@ -3,16 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { getSupabase } from "@/lib/supabase";
 import { GameState, Card as CardT } from "@/lib/types";
-import { cardKey, suitSymbol, rankLabel, beats } from "@/lib/durak";
+import { cardKey, suitSymbol, beats } from "@/lib/durak";
 import Card from "@/components/Card";
 
 function getPlayerId(): string {
   if (typeof window === "undefined") return "";
   let id = localStorage.getItem("durak_pid");
-  if (!id) {
-    id = crypto.randomUUID();
-    localStorage.setItem("durak_pid", id);
-  }
+  if (!id) { id = crypto.randomUUID(); localStorage.setItem("durak_pid", id); }
   return id;
 }
 
@@ -21,51 +18,32 @@ export default function GamePage() {
   const code = params.code;
   const [state, setState] = useState<GameState | null>(null);
   const [pid, setPid] = useState("");
-  const [selected, setSelected] = useState<CardT | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
-  useEffect(() => {
-    setPid(getPlayerId());
-  }, []);
+  useEffect(() => { setPid(getPlayerId()); }, []);
 
   useEffect(() => {
     if (!code) return;
     const sb = getSupabase();
-
-    // initial load
-    sb.from("games")
-      .select("state")
-      .eq("code", code)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data?.state) setState(data.state as GameState);
-      });
-
-    // realtime
+    sb.from("games").select("state").eq("code", code).maybeSingle().then(({ data }) => {
+      if (data?.state) setState(data.state as GameState);
+    });
     const channel = sb
       .channel(`game-${code}`)
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "games", filter: `code=eq.${code}` },
+      .on("postgres_changes", { event: "*", schema: "public", table: "games", filter: `code=eq.${code}` },
         (payload) => {
-          if (payload.new && (payload.new as { state: GameState }).state) {
+          if (payload.new && (payload.new as { state: GameState }).state)
             setState((payload.new as { state: GameState }).state);
-          }
-        }
-      )
+        })
       .subscribe();
-
-    return () => {
-      sb.removeChannel(channel);
-    };
+    return () => { sb.removeChannel(channel); };
   }, [code]);
 
   async function act(action: string, extra: Record<string, unknown> = {}) {
     setError("");
     const res = await fetch("/api/game", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, code, playerId: pid, ...extra }),
     });
     const data = await res.json();
@@ -80,115 +58,121 @@ export default function GamePage() {
 
   if (!state) {
     return (
-      <main className="min-h-screen flex items-center justify-center">
-        <div className="text-white/70">Laedt Spiel...</div>
-      </main>
-    );
-  }
-
-  // Lobby Ansicht
-  if (state.phase === "lobby") {
-    return (
-      <main className="min-h-screen p-6 flex items-center justify-center">
-        <div className="max-w-md w-full bg-black/40 rounded-2xl p-8 border border-white/10">
-          <h1 className="text-3xl font-black mb-2 text-center">Lobby</h1>
-          <p className="text-center text-white/60 mb-6">Teile den Code mit deinen Freunden</p>
-
-          <div
-            className="bg-white/10 rounded p-6 mb-6 text-center cursor-pointer"
-            onClick={() => {
-              navigator.clipboard.writeText(code);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            }}
-          >
-            <div className="text-5xl font-mono tracking-widest font-bold">{code}</div>
-            <div className="text-xs text-white/50 mt-2">{copied ? "Kopiert" : "Klicken zum Kopieren"}</div>
-          </div>
-
-          <div className="mb-6">
-            <h2 className="font-bold mb-2">Spieler ({state.players.length}/4)</h2>
-            <ul className="space-y-2">
-              {state.players.map((p) => (
-                <li
-                  key={p.id}
-                  className="px-4 py-2 bg-white/5 rounded flex justify-between items-center"
-                >
-                  <span>{p.name}</span>
-                  {p.id === state.hostId && (
-                    <span className="text-xs bg-yellow-500/30 px-2 py-1 rounded">Host</span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          </div>
-
-          {isHost ? (
-            <button
-              onClick={() => act("start")}
-              disabled={state.players.length < 2}
-              className="w-full py-3 rounded bg-emerald-500 hover:bg-emerald-400 font-bold disabled:opacity-50"
-            >
-              Spiel starten
-            </button>
-          ) : (
-            <p className="text-center text-white/60">Warte auf Host...</p>
-          )}
-          {error && <p className="mt-4 text-red-400 text-sm text-center">{error}</p>}
+      <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 1 }}>
+        <div style={{ textAlign: "center" }}>
+          <div className="font-display" style={{ fontSize: "40px", color: "var(--gold)", marginBottom: "8px" }}>Durak</div>
+          <div style={{ color: "var(--text-dim)", fontSize: "13px" }}>Spiel wird geladen...</div>
         </div>
       </main>
     );
   }
 
-  // Spielende
+  /* ---- LOBBY ---- */
+  if (state.phase === "lobby") {
+    const link = typeof window !== "undefined" ? window.location.href : "";
+    return (
+      <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", position: "relative", zIndex: 1 }}>
+        <div style={{ width: "100%", maxWidth: "440px" }}>
+          <div style={{ textAlign: "center", marginBottom: "32px" }}>
+            <h1 className="font-display" style={{ fontSize: "52px", fontWeight: 900, color: "var(--cream)", lineHeight: 1 }}>Durak</h1>
+            <p style={{ color: "var(--text-dim)", fontSize: "12px", marginTop: "4px" }}>Warte auf Mitspieler</p>
+          </div>
+
+          <div className="panel" style={{ padding: "32px" }}>
+            {/* Code */}
+            <div
+              style={{ textAlign: "center", cursor: "pointer", marginBottom: "28px", padding: "20px", background: "rgba(0,0,0,0.3)", borderRadius: "10px", border: "1px solid rgba(201,164,85,0.25)" }}
+              onClick={() => { navigator.clipboard.writeText(link); setCopied(true); setTimeout(() => setCopied(false), 2000); }}
+            >
+              <div style={{ fontSize: "10px", letterSpacing: "0.2em", textTransform: "uppercase", color: "var(--text-dim)", marginBottom: "8px" }}>Einladungscode</div>
+              <div className="font-mono" style={{ fontSize: "44px", fontWeight: 700, color: "var(--gold)", letterSpacing: "0.15em" }}>{code}</div>
+              <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: "8px" }}>{copied ? "Link kopiert" : "Klicken zum Kopieren"}</div>
+            </div>
+
+            {/* Spielerliste */}
+            <div style={{ marginBottom: "24px" }}>
+              <div style={{ fontSize: "10px", fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", color: "var(--text-dim)", marginBottom: "12px" }}>
+                Spieler {state.players.length} / 4
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                {state.players.map((p) => (
+                  <div key={p.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "rgba(0,0,0,0.25)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <span style={{ fontWeight: 600, color: "var(--cream)" }}>{p.name}</span>
+                    {p.id === state.hostId && (
+                      <span style={{ fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "3px 8px", borderRadius: "4px", background: "rgba(201,164,85,0.15)", color: "var(--gold)", border: "1px solid rgba(201,164,85,0.3)" }}>Host</span>
+                    )}
+                  </div>
+                ))}
+                {Array.from({ length: 4 - state.players.length }).map((_, i) => (
+                  <div key={i} style={{ padding: "10px 14px", background: "rgba(0,0,0,0.1)", borderRadius: "8px", border: "1px dashed rgba(255,255,255,0.08)", color: "var(--text-dim)", fontSize: "12px" }}>
+                    Wartet auf Spieler...
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {isHost ? (
+              <button
+                className="btn btn-gold"
+                onClick={() => act("start")}
+                disabled={state.players.length < 2}
+                style={{ width: "100%", padding: "14px", fontSize: "12px" }}
+              >
+                {state.players.length < 2 ? "Mindestens 2 Spieler nötig" : "Spiel starten"}
+              </button>
+            ) : (
+              <div style={{ textAlign: "center", color: "var(--text-dim)", fontSize: "13px", padding: "12px" }}>Warte auf Host...</div>
+            )}
+
+            {error && <p style={{ marginTop: "12px", color: "#f87171", fontSize: "13px", textAlign: "center" }}>{error}</p>}
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  /* ---- FINISHED ---- */
   if (state.phase === "finished") {
     const loser = state.players.find((p) => p.id === state.loserId);
+    const isLoser = state.loserId === pid;
     return (
-      <main className="min-h-screen flex items-center justify-center p-6">
-        <div className="max-w-md w-full bg-black/40 rounded-2xl p-8 border border-white/10 text-center">
-          <h1 className="text-4xl font-black mb-4">Spiel vorbei</h1>
-          <p className="text-2xl mb-6">
-            {loser ? (
-              <>
-                <span className="text-red-400">{loser.name}</span> ist der Durak
-              </>
-            ) : (
-              "Unentschieden"
+      <main style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", padding: "24px", position: "relative", zIndex: 1 }}>
+        <div style={{ width: "100%", maxWidth: "400px" }}>
+          <div className="panel" style={{ padding: "48px 32px", textAlign: "center" }}>
+            <div className="font-display" style={{ fontSize: "80px", lineHeight: 1, marginBottom: "16px" }}>
+              {isLoser ? "☻" : "♠"}
+            </div>
+            <h2 className="font-display" style={{ fontSize: "40px", fontWeight: 900, color: "var(--cream)", marginBottom: "8px" }}>
+              {loser ? "Durak" : "Unentschieden"}
+            </h2>
+            {loser && (
+              <p style={{ color: "var(--text-dim)", marginBottom: "32px" }}>
+                <span style={{ color: isLoser ? "#f87171" : "var(--gold)", fontWeight: 700 }}>{loser.name}</span>
+                {" "}hat verloren
+              </p>
             )}
-          </p>
-          {isHost && (
-            <button
-              onClick={() => act("restart")}
-              className="w-full py-3 rounded bg-emerald-500 font-bold"
-            >
-              Neue Runde
-            </button>
-          )}
+            {isHost && (
+              <button className="btn btn-gold" onClick={() => act("restart")} style={{ width: "100%", padding: "14px" }}>
+                Neue Runde
+              </button>
+            )}
+          </div>
         </div>
       </main>
     );
   }
 
-  // Spielansicht
+  /* ---- GAME ---- */
   const trump = state.trump;
-  const defender = state.players[state.defenderIdx];
-  const attacker = state.players[state.attackerIdx];
   const opponents = state.players.filter((p) => p.id !== pid);
-
-  // Welche Paare sind ungeschlagen (fuer Defender)
   const undefendedIdx = state.table.findIndex((t) => !t.defense);
+  const allDefended = state.table.length > 0 && state.table.every((t) => t.defense);
 
   function canPlayAttack(c: CardT): boolean {
-    if (!state) return false;
-    if (isDefender) return false;
-    if (state.table.length === 0) {
-      return isAttacker;
-    }
+    if (!state || isDefender) return false;
+    if (state.table.length === 0) return isAttacker;
     const ranks = new Set<number>();
-    state.table.forEach((p) => {
-      ranks.add(p.attack.rank);
-      if (p.defense) ranks.add(p.defense.rank);
-    });
+    state.table.forEach((p) => { ranks.add(p.attack.rank); if (p.defense) ranks.add(p.defense.rank); });
     return ranks.has(c.rank);
   }
 
@@ -200,83 +184,74 @@ export default function GamePage() {
 
   function onCardClick(c: CardT) {
     setError("");
-    if (isDefender && canPlayDefense(c)) {
-      act("defend", { card: c, pairIdx: undefendedIdx });
-      setSelected(null);
-      return;
-    }
-    if (!isDefender && canPlayAttack(c)) {
-      act("attack", { card: c });
-      setSelected(null);
-      return;
-    }
-    setSelected(c);
+    if (isDefender && canPlayDefense(c)) { act("defend", { card: c, pairIdx: undefendedIdx }); return; }
+    if (!isDefender && canPlayAttack(c)) { act("attack", { card: c }); return; }
   }
 
-  const allDefended = state.table.length > 0 && state.table.every((t) => t.defense);
+  const myRole = isAttacker ? "atk" : isDefender ? "def" : null;
 
   return (
-    <main className="min-h-screen p-3 sm:p-6 flex flex-col">
+    <main style={{ minHeight: "100vh", display: "flex", flexDirection: "column", padding: "12px", position: "relative", zIndex: 1, gap: "10px" }}>
+
       {/* Header */}
-      <div className="flex justify-between items-center mb-4">
-        <div className="text-sm">
-          <div className="font-mono text-white/60">Code: {code}</div>
-          <div className="text-xs text-white/50">{state.lastAction}</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <span className="font-display" style={{ fontSize: "22px", fontWeight: 900, color: "var(--cream)" }}>Durak</span>
+          <span className="font-mono" style={{ fontSize: "11px", color: "var(--text-dim)", marginLeft: "10px" }}>{code}</span>
         </div>
-        <div className="text-right text-sm">
-          <div>
-            Trumpf:{" "}
-            {trump && (
-              <span className={trump === "H" || trump === "D" ? "text-red-400" : ""}>
+        <div style={{ display: "flex", gap: "16px", alignItems: "center" }}>
+          {trump && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" }}>
+              <span style={{ color: "var(--text-dim)", fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.1em" }}>Trumpf</span>
+              <span style={{ fontSize: "20px", color: trump === "H" || trump === "D" ? "var(--red)" : "var(--cream)" }}>
                 {suitSymbol(trump)}
               </span>
-            )}
+            </div>
+          )}
+          <div style={{ fontSize: "11px", color: "var(--text-dim)" }}>
+            <span style={{ color: "var(--gold)" }}>{state.deck.length}</span> im Deck
           </div>
-          <div className="text-xs text-white/50">Deck: {state.deck.length}</div>
         </div>
       </div>
 
       {/* Gegner */}
-      <div className="flex flex-wrap gap-3 justify-around mb-6">
+      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
         {opponents.map((p) => {
           const isAtt = state.players[state.attackerIdx].id === p.id;
           const isDef = state.players[state.defenderIdx].id === p.id;
           return (
-            <div
-              key={p.id}
-              className={`bg-black/30 rounded-lg p-3 border ${
-                isAtt ? "border-orange-400" : isDef ? "border-blue-400" : "border-white/10"
-              }`}
-            >
-              <div className="text-sm font-bold mb-2">
-                {p.name}
-                {isAtt && <span className="ml-2 text-xs text-orange-400">Angriff</span>}
-                {isDef && <span className="ml-2 text-xs text-blue-400">Verteidigung</span>}
-                {p.passed && <span className="ml-2 text-xs text-white/40">passt</span>}
+            <div key={p.id} className={`player-badge ${isAtt ? "attacker" : isDef ? "defender" : ""}`} style={{ flex: 1, minWidth: "120px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <span style={{ fontWeight: 700, fontSize: "13px", color: "var(--cream)" }}>{p.name}</span>
+                <div style={{ display: "flex", gap: "4px" }}>
+                  {isAtt && <span className="role-tag atk">Angriff</span>}
+                  {isDef && <span className="role-tag def">Abwehr</span>}
+                  {p.passed && <span className="role-tag pass">passt</span>}
+                </div>
               </div>
-              <div className="flex gap-1">
-                {p.hand.map((_, i) => (
-                  <Card key={i} faceDown small />
-                ))}
+              <div style={{ display: "flex", gap: "3px", flexWrap: "wrap" }}>
+                {p.hand.map((_, i) => <Card key={i} faceDown small animDelay={i * 20} />)}
               </div>
-              <div className="text-xs text-white/50 mt-1">{p.hand.length} Karten</div>
+              <div style={{ fontSize: "10px", color: "var(--text-dim)", marginTop: "6px" }}>{p.hand.length} Karten</div>
             </div>
           );
         })}
       </div>
 
       {/* Tisch */}
-      <div className="flex-1 flex flex-col items-center justify-center gap-4 my-4">
-        <div className="bg-emerald-800/40 rounded-2xl p-6 min-h-[120px] min-w-[280px] border border-emerald-500/30 flex flex-wrap gap-3 items-center justify-center">
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "8px" }}>
+        <div className="table-surface" style={{ flex: 1, minHeight: "130px", display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "center", gap: "10px", padding: "16px" }}>
           {state.table.length === 0 ? (
-            <div className="text-white/50 text-sm">Kein Angriff</div>
+            <div style={{ color: "rgba(255,255,255,0.2)", fontSize: "12px", textAlign: "center" }}>
+              {isAttacker ? "Lege eine Karte an" : "Warte auf Angriff"}
+            </div>
           ) : (
             state.table.map((pair, i) => (
-              <div key={i} className="relative">
-                <Card card={pair.attack} />
+              <div key={i} style={{ position: "relative", width: "62px", height: "90px" }}>
+                <Card card={pair.attack} animDelay={i * 60} />
                 {pair.defense && (
-                  <div className="absolute top-3 left-3">
-                    <Card card={pair.defense} />
+                  <div style={{ position: "absolute", top: "10px", left: "10px" }}>
+                    <Card card={pair.defense} animDelay={i * 60 + 100} />
                   </div>
                 )}
               </div>
@@ -284,59 +259,62 @@ export default function GamePage() {
           )}
         </div>
 
-        {/* Trumpfanzeige */}
-        {state.trumpCard && state.deck.length > 0 && (
-          <div className="text-xs text-white/60 flex items-center gap-2">
-            <span>Trumpfkarte:</span>
-            <Card card={state.trumpCard} small />
-          </div>
-        )}
+        {/* Letzter Zug + Aktions-Status */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 4px" }}>
+          <span style={{ fontSize: "11px", color: "var(--text-dim)", fontStyle: "italic" }}>{state.lastAction}</span>
+          {state.trumpCard && state.deck.length > 0 && (
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <span style={{ fontSize: "10px", color: "var(--text-dim)" }}>Trumpfkarte</span>
+              <Card card={state.trumpCard} small />
+            </div>
+          )}
+        </div>
 
-        {/* Aktionen */}
-        <div className="flex gap-3 flex-wrap justify-center">
+        {/* Aktionsbuttons */}
+        <div style={{ display: "flex", gap: "8px", justifyContent: "center" }}>
           {isDefender && state.table.length > 0 && !allDefended && !state.takeRequested && (
-            <button
-              onClick={() => act("take")}
-              className="px-5 py-2 rounded bg-red-500 hover:bg-red-400 font-bold"
-            >
+            <button className="btn btn-danger" onClick={() => act("take")}>
               Aufnehmen
             </button>
           )}
           {!isDefender && state.table.length > 0 && !me?.passed && (
-            <button
-              onClick={() => act("pass")}
-              className="px-5 py-2 rounded bg-slate-600 hover:bg-slate-500 font-bold"
-            >
+            <button className="btn btn-ghost" onClick={() => act("pass")}>
               Passen / Fertig
             </button>
+          )}
+          {state.takeRequested && isDefender && (
+            <div style={{ fontSize: "12px", color: "#f87171", padding: "10px" }}>Du nimmst auf...</div>
           )}
         </div>
       </div>
 
       {/* Eigene Hand */}
-      <div className="bg-black/40 rounded-xl p-3 border border-white/10">
-        <div className="text-sm mb-2 flex justify-between">
-          <span>
-            Du: <span className="font-bold">{me?.name}</span>
-            {isAttacker && <span className="ml-2 text-orange-400">(Angreifer)</span>}
-            {isDefender && <span className="ml-2 text-blue-400">(Verteidiger)</span>}
-          </span>
-          <span className="text-white/50">{me?.hand.length ?? 0} Karten</span>
+      <div className="panel" style={{ padding: "14px 16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ fontWeight: 700, color: "var(--cream)", fontSize: "14px" }}>{me?.name}</span>
+            {myRole && <span className={`role-tag ${myRole}`}>{myRole === "atk" ? "Angreifer" : "Verteidiger"}</span>}
+            {me?.passed && <span className="role-tag pass">passt</span>}
+          </div>
+          <span style={{ fontSize: "11px", color: "var(--text-dim)" }}>{me?.hand.length ?? 0} Karten</span>
         </div>
-        <div className="flex flex-wrap gap-2 justify-center">
-          {me?.hand.map((c) => {
+
+        <div style={{ display: "flex", gap: "6px", flexWrap: "wrap", justifyContent: "center" }}>
+          {me?.hand.map((c, i) => {
             const playable = isDefender ? canPlayDefense(c) : canPlayAttack(c);
             return (
-              <div
+              <Card
                 key={cardKey(c)}
-                className={selected && cardKey(selected) === cardKey(c) ? "ring-2 ring-yellow-400 rounded" : ""}
-              >
-                <Card card={c} disabled={!playable} onClick={() => onCardClick(c)} />
-              </div>
+                card={c}
+                disabled={!playable}
+                onClick={() => onCardClick(c)}
+                animDelay={i * 30}
+              />
             );
           })}
         </div>
-        {error && <p className="mt-2 text-red-400 text-sm text-center">{error}</p>}
+
+        {error && <p style={{ marginTop: "10px", color: "#f87171", fontSize: "12px", textAlign: "center" }}>{error}</p>}
       </div>
     </main>
   );
