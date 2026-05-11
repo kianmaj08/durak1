@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body { height: 100%; }
+
+.card {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: space-between;
+  width: 56px;
+  height: 80px;
+  border-radius: 8px;
+  background: white;
+  color: black;
+  padding: 4px 6px;
+  font-weight: 700;
+  font-size: 14px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.15s;
+}
+.card:hover { transform: translateY(-6px); }
+.card.red { color: #dc2626; }
+.card.disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.card.back {
+  background: repeating-linear-gradient(45deg, #1e3a8a, #1e3a8a 6px, #1e40af 6px, #1e40af 12px);
+  color: transparent;
+}
+
+.card-sm { width: 44px; height: 64px; font-size: 11px; }
