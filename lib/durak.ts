@@ -2,6 +2,7 @@ import { Card, GameState, Player, Rank, Suit, TablePair } from "./types";
 
 const SUITS: Suit[] = ["H", "D", "C", "S"];
 const RANKS: Rank[] = [6, 7, 8, 9, 10, 11, 12, 13, 14];
+export const TURN_SECONDS = 30;
 
 export function createDeck(): Card[] {
   const deck: Card[] = [];
@@ -18,9 +19,7 @@ export function shuffle<T>(arr: T[]): T[] {
   return a;
 }
 
-export function cardKey(c: Card): string {
-  return `${c.suit}${c.rank}`;
-}
+export function cardKey(c: Card): string { return `${c.suit}${c.rank}`; }
 
 export function rankLabel(r: Rank): string {
   if (r === 11) return "B";
@@ -34,64 +33,12 @@ export function suitSymbol(s: Suit): string {
   return s === "H" ? "\u2665" : s === "D" ? "\u2666" : s === "C" ? "\u2663" : "\u2660";
 }
 
-export function isRed(s: Suit): boolean {
-  return s === "H" || s === "D";
-}
+export function isRed(s: Suit): boolean { return s === "H" || s === "D"; }
 
 export function beats(attack: Card, defense: Card, trump: Suit): boolean {
   if (defense.suit === attack.suit && defense.rank > attack.rank) return true;
   if (defense.suit === trump && attack.suit !== trump) return true;
   return false;
-}
-
-export function startGame(players: Player[], hostId: string, code: string): GameState {
-  if (players.length < 2 || players.length > 4) throw new Error("2 bis 4 Spieler");
-  let deck = shuffle(createDeck());
-  const hands: Card[][] = players.map(() => []);
-  for (let r = 0; r < 6; r++) {
-    for (let p = 0; p < players.length; p++) {
-      const c = deck.shift();
-      if (c) hands[p].push(c);
-    }
-  }
-  const trumpCard = deck[deck.length - 1] ?? null;
-  const trump: Suit | null = trumpCard ? trumpCard.suit : null;
-
-  const newPlayers: Player[] = players.map((p, i) => ({
-    ...p,
-    hand: sortHand(hands[i], trump!),
-    passed: false,
-  }));
-
-  // niedrigster Trumpf startet
-  let attackerIdx = 0;
-  let lowest: { idx: number; rank: number } | null = null;
-  newPlayers.forEach((p, i) => {
-    p.hand.forEach((c) => {
-      if (c.suit === trump) {
-        if (lowest === null || c.rank < lowest.rank) lowest = { idx: i, rank: c.rank };
-      }
-    });
-  });
-  if (lowest) attackerIdx = (lowest as { idx: number }).idx;
-
-  return {
-    code,
-    hostId,
-    phase: "playing",
-    players: newPlayers,
-    deck,
-    discard: [],
-    trump,
-    trumpCard,
-    table: [],
-    attackerIdx,
-    defenderIdx: (attackerIdx + 1) % newPlayers.length,
-    loserId: null,
-    takeRequested: false,
-    lastAction: "Spiel gestartet",
-    createdAt: Date.now(),
-  };
 }
 
 export function sortHand(hand: Card[], trump: Suit): Card[] {
@@ -104,20 +51,48 @@ export function sortHand(hand: Card[], trump: Suit): Card[] {
   });
 }
 
-export function activePlayers(state: GameState): Player[] {
-  return state.players.filter((p) => p.hand.length > 0 || state.deck.length > 0);
+export function startGame(players: Player[], hostId: string, code: string): GameState {
+  if (players.length < 2 || players.length > 4) throw new Error("2 bis 4 Spieler");
+  let deck = shuffle(createDeck());
+  const hands: Card[][] = players.map(() => []);
+  for (let r = 0; r < 6; r++)
+    for (let p = 0; p < players.length; p++) {
+      const c = deck.shift();
+      if (c) hands[p].push(c);
+    }
+  const trumpCard = deck[deck.length - 1] ?? null;
+  const trump: Suit | null = trumpCard ? trumpCard.suit : null;
+
+  const newPlayers: Player[] = players.map((p, i) => ({
+    ...p,
+    hand: sortHand(hands[i], trump!),
+    passed: false,
+  }));
+
+  let attackerIdx = 0;
+  let lowest: { idx: number; rank: number } | null = null;
+  newPlayers.forEach((p, i) => {
+    p.hand.forEach((c) => {
+      if (c.suit === trump && (lowest === null || c.rank < lowest.rank))
+        lowest = { idx: i, rank: c.rank };
+    });
+  });
+  if (lowest) attackerIdx = (lowest as { idx: number }).idx;
+
+  return {
+    code, hostId,
+    phase: "playing",
+    players: newPlayers,
+    deck, discard: [], trump, trumpCard, table: [],
+    attackerIdx,
+    defenderIdx: (attackerIdx + 1) % newPlayers.length,
+    loserId: null, takeRequested: false,
+    lastAction: "Spiel gestartet",
+    turnStartedAt: Date.now(),
+    createdAt: Date.now(),
+  };
 }
 
-export function nextAlive(state: GameState, fromIdx: number): number {
-  const n = state.players.length;
-  for (let i = 1; i <= n; i++) {
-    const idx = (fromIdx + i) % n;
-    if (state.players[idx].hand.length > 0) return idx;
-  }
-  return fromIdx;
-}
-
-// Werte die auf dem Tisch liegen (fuer podkidat / dazulegen)
 export function ranksOnTable(state: GameState): Set<number> {
   const set = new Set<number>();
   for (const pair of state.table) {
@@ -132,19 +107,13 @@ export function canAttack(state: GameState, playerId: string, card: Card): { ok:
   const playerIdx = state.players.findIndex((p) => p.id === playerId);
   if (playerIdx === -1) return { ok: false, reason: "Spieler nicht gefunden" };
   if (playerIdx === state.defenderIdx) return { ok: false, reason: "Verteidiger kann nicht angreifen" };
-
-  // Maximum: 6 Karten ODER Handgroesse des Verteidigers
   const defender = state.players[state.defenderIdx];
   const maxAttacks = Math.min(6, defender.hand.length + state.table.filter((t) => t.defense).length);
-  const currentAttacks = state.table.length;
-  if (currentAttacks >= maxAttacks) return { ok: false, reason: "Maximum erreicht" };
-
+  if (state.table.length >= maxAttacks) return { ok: false, reason: "Maximum erreicht" };
   if (state.table.length === 0) {
-    // Erster Angriff darf nur vom Hauptangreifer kommen
     if (playerIdx !== state.attackerIdx) return { ok: false, reason: "Nicht dein Zug" };
     return { ok: true };
   }
-  // Dazulegen: Wert muss bereits auf dem Tisch sein
   const set = ranksOnTable(state);
   if (!set.has(card.rank)) return { ok: false, reason: "Dieser Wert liegt nicht auf dem Tisch" };
   return { ok: true };
@@ -159,7 +128,7 @@ export function canDefend(state: GameState, playerId: string, card: Card, pairId
   if (!pair) return { ok: false, reason: "Paar nicht gefunden" };
   if (pair.defense) return { ok: false, reason: "Bereits geschlagen" };
   if (!state.trump) return { ok: false, reason: "Kein Trumpf" };
-  if (!beats(pair.attack, card, state.trump)) return { ok: false, reason: "Schlaegt nicht" };
+  if (!beats(pair.attack, card, state.trump)) return { ok: false, reason: "Schlägt nicht" };
   return { ok: true };
 }
 
@@ -171,8 +140,8 @@ export function applyAttack(state: GameState, playerId: string, card: Card): Gam
   p.hand = p.hand.filter((c) => !(c.suit === card.suit && c.rank === card.rank));
   next.table.push({ attack: card });
   next.lastAction = `${p.name} legt ${rankLabel(card.rank)}${suitSymbol(card.suit)}`;
-  // Pass Status zuruecksetzen, wenn neue Karte
   next.players.forEach((pl) => (pl.passed = false));
+  next.turnStartedAt = Date.now();
   return next;
 }
 
@@ -183,7 +152,8 @@ export function applyDefense(state: GameState, playerId: string, card: Card, pai
   const p = next.players.find((x) => x.id === playerId)!;
   p.hand = p.hand.filter((c) => !(c.suit === card.suit && c.rank === card.rank));
   next.table[pairIdx].defense = card;
-  next.lastAction = `${p.name} schlaegt mit ${rankLabel(card.rank)}${suitSymbol(card.suit)}`;
+  next.lastAction = `${p.name} schlägt mit ${rankLabel(card.rank)}${suitSymbol(card.suit)}`;
+  next.turnStartedAt = Date.now();
   return next;
 }
 
@@ -193,16 +163,34 @@ export function applyTake(state: GameState, playerId: string): GameState {
   const next: GameState = JSON.parse(JSON.stringify(state));
   next.takeRequested = true;
   next.lastAction = `${next.players[playerIdx].name} nimmt auf`;
+  next.turnStartedAt = Date.now();
   return next;
 }
 
 export function applyPass(state: GameState, playerId: string): GameState {
-  // Angreifer signalisiert: keine weiteren Angriffe
   const playerIdx = state.players.findIndex((p) => p.id === playerId);
   if (playerIdx === state.defenderIdx) throw new Error("Verteidiger kann nicht passen");
   const next: GameState = JSON.parse(JSON.stringify(state));
   next.players[playerIdx].passed = true;
   next.lastAction = `${next.players[playerIdx].name} passt`;
+  return tryEndRound(next);
+}
+
+export function applyTimeout(state: GameState): GameState {
+  if (state.phase !== "playing") return state;
+  const now = Date.now();
+  if (!state.turnStartedAt || now - state.turnStartedAt < (TURN_SECONDS - 2) * 1000) return state;
+  const next: GameState = JSON.parse(JSON.stringify(state));
+  const defender = next.players[next.defenderIdx];
+  const attacker = next.players[next.attackerIdx];
+  if (next.table.length > 0 && next.table.some((t) => !t.defense) && !next.takeRequested) {
+    next.takeRequested = true;
+    next.lastAction = `${defender.name} Zeit abgelaufen – nimmt auf`;
+    next.turnStartedAt = Date.now();
+    return tryEndRound(next);
+  }
+  next.players[next.attackerIdx].passed = true;
+  next.lastAction = `${attacker.name} Zeit abgelaufen – passt`;
   return tryEndRound(next);
 }
 
@@ -215,17 +203,9 @@ function allDefended(state: GameState): boolean {
 }
 
 export function tryEndRound(state: GameState): GameState {
-  // Runde endet wenn:
-  // 1) Verteidiger nimmt auf UND alle Angreifer haben gepasst
-  // 2) Alle Karten geschlagen UND alle Angreifer haben gepasst
   if (state.table.length === 0) return state;
-
-  if (state.takeRequested && allAttackersPassed(state)) {
-    return endRound(state, true);
-  }
-  if (allDefended(state) && allAttackersPassed(state)) {
-    return endRound(state, false);
-  }
+  if (state.takeRequested && allAttackersPassed(state)) return endRound(state, true);
+  if (allDefended(state) && allAttackersPassed(state)) return endRound(state, false);
   return state;
 }
 
@@ -251,9 +231,8 @@ function endRound(state: GameState, defenderTakes: boolean): GameState {
   next.takeRequested = false;
   next.players.forEach((p) => (p.passed = false));
 
-  // Nachziehen: Reihenfolge ab Angreifer, Verteidiger zuletzt
-  const order: number[] = [];
   const n = next.players.length;
+  const order: number[] = [];
   for (let i = 0; i < n; i++) {
     const idx = (next.attackerIdx + i) % n;
     if (idx !== next.defenderIdx) order.push(idx);
@@ -269,27 +248,24 @@ function endRound(state: GameState, defenderTakes: boolean): GameState {
     if (next.trump) pl.hand = sortHand(pl.hand, next.trump);
   }
 
-  // Naechster Angreifer
   if (defenderTakes) {
-    // Verteidiger uebersprungen
     next.attackerIdx = (next.defenderIdx + 1) % n;
   } else {
     next.attackerIdx = next.defenderIdx;
   }
-  // skippe Spieler ohne Karten
+
   let safety = 0;
-  while (next.players[next.attackerIdx].hand.length === 0 && safety < n * 2) {
+  while (next.players[next.attackerIdx].hand.length === 0 && next.deck.length === 0 && safety < n * 2) {
     next.attackerIdx = (next.attackerIdx + 1) % n;
     safety++;
   }
   next.defenderIdx = (next.attackerIdx + 1) % n;
   safety = 0;
-  while (next.players[next.defenderIdx].hand.length === 0 && safety < n * 2) {
+  while (next.players[next.defenderIdx].hand.length === 0 && next.deck.length === 0 && safety < n * 2) {
     next.defenderIdx = (next.defenderIdx + 1) % n;
     safety++;
   }
 
-  // Spielende?
   const playersWithCards = next.players.filter((p) => p.hand.length > 0);
   if (next.deck.length === 0 && playersWithCards.length <= 1) {
     next.phase = "finished";
@@ -297,6 +273,9 @@ function endRound(state: GameState, defenderTakes: boolean): GameState {
     next.lastAction = next.loserId
       ? `${next.players.find((p) => p.id === next.loserId)!.name} ist der Durak`
       : "Unentschieden";
+    next.turnStartedAt = null;
+  } else {
+    next.turnStartedAt = Date.now();
   }
 
   return next;

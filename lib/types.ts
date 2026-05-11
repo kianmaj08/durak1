@@ -1,5 +1,5 @@
-export type Suit = "H" | "D" | "C" | "S"; // Herz, Karo, Kreuz, Pik
-export type Rank = 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14; // 11=B, 12=D, 13=K, 14=A
+export type Suit = "H" | "D" | "C" | "S";
+export type Rank = 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14;
 
 export interface Card {
   suit: Suit;
@@ -15,10 +15,10 @@ export interface Player {
   id: string;
   name: string;
   hand: Card[];
-  passed?: boolean; // hat in aktueller Phase gepasst
+  passed?: boolean;
 }
 
-export type Phase = "lobby" | "playing" | "finished";
+export type Phase = "lobby" | "dealing" | "playing" | "finished";
 
 export interface GameState {
   code: string;
@@ -35,5 +35,6 @@ export interface GameState {
   loserId: string | null;
   takeRequested: boolean;
   lastAction: string;
+  turnStartedAt: number | null;
   createdAt: number;
 }
