@@ -244,7 +244,7 @@ export default function Home() {
 
         {/* Floating decorative cards */}
         {FLOATING_CARDS.map((c, i) => (
-          <div key={i} className="float-card" style={{ ...c.style, "--rot": c.style.transform, position: "absolute", animationDelay: c.style.animationDelay } as React.CSSProperties & Record<string, string>}>
+          <div key={i} className="float-card" style={{ ...c.style, "--rot": c.style.transform, position: "absolute", animationDelay: c.style.animationDelay } as unknown as React.CSSProperties}>
             <FloatingCard suit={c.suit} rank={c.rank} style={{}} />
           </div>
         ))}
